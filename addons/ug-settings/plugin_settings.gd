@@ -5,66 +5,107 @@ extends RefCounted
 ## To use this, create a named class for your plugin's settings and call
 ## [member initialize_setting] for each setting during the class's [method _static_init] method.
 
-var _settings_prefix: String
+const DEFAULT_SETTINGS_PATH: String = "Plugins"
+
+const SETTINGS_PATH_OVERRIDE_SYMBOL: StringName = &"SETTINGS_PATH"
+
+# TODO @sphynx-owner: programmatically generate
+const PROPERTY_LIST: Dictionary[String, bool] = {
+	"settings_path": true,
+	"settings_properties": true,
+	"_setter_gate": true,
+}
+
+static var initialized_settings: Dictionary[GDScript, Dictionary]
+
+var settings_path: String = DEFAULT_SETTINGS_PATH
+
+var settings_properties: Array[StringName]
+
+var _setter_gate: bool = false
 
 
-## [param settings_prefix] - The prefix for the plugin's setting keys (e.g "uncap_games_log/")
-func _init(settings_prefix: String) -> void:
-	self._settings_prefix = settings_prefix
-
-
-## Registers or initializes a project setting.[br]
-## [br]
-## [param key] - The key for the setting (will be prefixed with [member settings_prefix]).[br]
-## [param default_value] - The default value for the setting.[br]
-## [param config] - Dictionary of property info for the setting.[br]
-## [param use_prefix] - Whether to use a prefix for the setting.[br]
-## [br]
-## [b]NOTE[/b]: [code]usage[/code] key is ignored and will trigger a warning if passed,
-## check [method ProjectSettings.set_as_basic] or [method ProjectSettings.set_as_internal].
-## [codeblock]
-## @shape: {
-##   "type": int # TYPE_* (e.g. TYPE_STRING),
-##   "hint": int # PROPERTY_HINT_* (e.g. PROPERTY_HINT_ENUM),
-##   "hint_string": String # The hint string for the property (e.g. "None,One,Two,Three"),
-## }
-## [/codeblock]
-func initialize_setting(
-	key: String, default_value: Variant, config: Dictionary, use_prefix := true
-) -> void:
-	var property_info := config.duplicate()
-
-	var property_name: String
-	if use_prefix:
-		property_name = "%s/%s" % [_settings_prefix, key]
-	else:
-		property_name = key
-
-	property_info.name = property_name
-
-	if not ProjectSettings.has_setting(property_name):
-		ProjectSettings.set_setting(property_name, default_value)
-
-	# We call this every time, because in some scenarios not doing so resets hints
-	# after reloading the project
-	ProjectSettings.set_initial_value(property_name, default_value)
-	ProjectSettings.add_property_info(property_info)
-
-
-func get_setting(key: String, use_prefix := true) -> Variant:
-	if use_prefix:
-		return ProjectSettings.get_setting_with_override("%s/%s" % [_settings_prefix, key])
-	return ProjectSettings.get_setting_with_override(key)
-
-
-func has_setting(key: String, use_prefix := true) -> bool:
-	if use_prefix:
-		return ProjectSettings.has_setting("%s/%s" % [_settings_prefix, key])
-	return ProjectSettings.has_setting(key)
-
-
-func set_setting(key: String, value: Variant, use_prefix := true):
-	if use_prefix:
-		ProjectSettings.set_setting("%s/%s" % [_settings_prefix, key], value)
+func _init() -> void:
+	var script: GDScript = get_script()
+	
+	if script == UgPluginSettings:
 		return
-	ProjectSettings.set_setting(key, value)
+	
+	if !initialized_settings.has(script):
+		initialized_settings[script] = {
+			"settings_path": DEFAULT_SETTINGS_PATH,
+			"settings_properties": [] as Array[String]
+		} as Dictionary[String, Variant]
+		
+		var constant_map: Dictionary = script.get_script_constant_map()
+		
+		if constant_map.has(SETTINGS_PATH_OVERRIDE_SYMBOL):
+			initialized_settings[script].settings_path = constant_map[SETTINGS_PATH_OVERRIDE_SYMBOL]
+		
+		var property_list: Array[Dictionary] = script.get_script_property_list()
+		
+		for property in property_list:
+			if PROPERTY_LIST.has(property.name) or !(property.usage & PROPERTY_USAGE_SCRIPT_VARIABLE):
+				continue
+			
+			initialized_settings[script].settings_properties.append(property.name)
+			
+			var property_name: String = "%s/%s" % [settings_path, property.name]
+			
+			var property_info: Dictionary = {
+				"name": property_name,
+				"type": property.type,
+				"hint": property.hint,
+				"hint_string": property.hint_string,
+			}
+			
+			var default_value: Variant = script.get_property_default_value(property.name)
+			
+			if not ProjectSettings.has_setting(property_name):
+				ProjectSettings.set_setting(property_name, default_value)
+			
+			# We call this every time, because in some scenarios not doing so resets hints
+			# after reloading the project
+			ProjectSettings.set_initial_value(property_name, default_value)
+			ProjectSettings.add_property_info(property_info)
+	
+	settings_path = initialized_settings[script].settings_path
+	
+	settings_properties = initialized_settings[script].settings_properties
+	
+	ProjectSettings.settings_changed.connect(_on_project_settings_changed)
+
+
+func get_setting(key: String) -> Variant:
+	return ProjectSettings.get_setting_with_override(_get_setting_name(key))
+
+
+func has_setting(key: String) -> bool:
+	return ProjectSettings.has_setting(_get_setting_name(key))
+
+
+func _property_set(key: String, value: Variant):
+	if _setter_gate:
+		return
+	
+	ProjectSettings.set_setting(_get_setting_name(key), value)
+
+
+func _get_setting_name(key: String) -> String:
+	return "%s/%s" % [settings_path, key]
+
+
+func _on_project_settings_changed():
+	for property in settings_properties:
+		if !has_setting(property):
+			push_error("setting ", _get_setting_name(property), " is missing from project setting")
+			return
+		
+		var value: Variant = get_setting(property)
+		
+		if get(property) != value:
+			_setter_gate = true
+			
+			set(property, value)
+			
+			_setter_gate = false
