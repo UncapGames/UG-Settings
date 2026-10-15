@@ -39,8 +39,6 @@ func _init() -> void:
 		
 		var constant_map: Dictionary = script.get_script_constant_map()
 		
-		print(constant_map)
-		
 		if constant_map.has(SETTINGS_PATH_OVERRIDE_SYMBOL):
 			initialized_settings[script].settings_path = constant_map[SETTINGS_PATH_OVERRIDE_SYMBOL]
 		
@@ -63,10 +61,7 @@ func _init() -> void:
 			
 			var default_value: Variant = script.get_property_default_value(property.name)
 			
-			print(property_name)
-			
 			if not ProjectSettings.has_setting(property_name):
-				print("setting setting: ", property_name, ", default value: ", default_value)
 				ProjectSettings.set_setting(property_name, default_value)
 			
 			# We call this every time, because in some scenarios not doing so resets hints
@@ -77,6 +72,14 @@ func _init() -> void:
 	settings_path = initialized_settings[script].settings_path
 	
 	settings_properties = initialized_settings[script].settings_properties
+	
+	for property in settings_properties:
+		var setting_name: String = _get_setting_name(property)
+		
+		if not ProjectSettings.has_setting(setting_name):
+			push_error("missing project setting ", setting_name)
+		
+		set(property, ProjectSettings.get_setting(setting_name))
 	
 	ProjectSettings.settings_changed.connect(_on_project_settings_changed)
 
