@@ -7,6 +7,8 @@ extends RefCounted
 
 const DEFAULT_SETTINGS_PATH: String = "Plugins"
 
+const DEFAULT_SETTINGS_CATEGORY: String = "General"
+
 const SETTINGS_PATH_OVERRIDE_SYMBOL: StringName = &"SETTINGS_PATH"
 
 # TODO @sphynx-owner: programmatically generate
@@ -20,7 +22,8 @@ static var initialized_settings: Dictionary[GDScript, Dictionary]
 
 var settings_path: String = DEFAULT_SETTINGS_PATH
 
-var settings_properties: Array[String]
+# @shape: {[property_name: String]: [category_name: String]}
+var settings_properties: Dictionary[String, String]
 
 var _setter_gate: bool = false
 
@@ -34,7 +37,7 @@ func _init() -> void:
 	if !initialized_settings.has(script):
 		initialized_settings[script] = {
 			"settings_path": DEFAULT_SETTINGS_PATH,
-			"settings_properties": [] as Array[String]
+			"settings_properties": {} as Dictionary[String, String]
 		} as Dictionary[String, Variant]
 		
 		var constant_map: Dictionary = script.get_script_constant_map()
@@ -44,13 +47,24 @@ func _init() -> void:
 		
 		var property_list: Array[Dictionary] = script.get_script_property_list()
 		
+		var current_category: String = DEFAULT_SETTINGS_CATEGORY
+		
 		for property in property_list:
 			if PROPERTY_LIST.has(property.name) or !(property.usage & PROPERTY_USAGE_SCRIPT_VARIABLE):
+				# HACK @sphynx-owner: there are procedurally generated categories to separate properties
+				# between inheriting classes, and those would all end with .gd? I am not sure about inner classes.
+				if property.usage & PROPERTY_USAGE_CATEGORY and !property.name.ends_with(".gd"):
+					current_category = property.name
+				
 				continue
 			
-			initialized_settings[script].settings_properties.append(property.name)
+			initialized_settings[script].settings_properties[property.name] = current_category
 			
-			var property_name: String = "%s/%s" % [initialized_settings[script].settings_path, property.name]
+			var property_name: String = "%s/%s/%s" % [
+				initialized_settings[script].settings_path,
+				initialized_settings[script].settings_properties[property.name],
+				property.name
+			]
 			
 			var property_info: Dictionary = {
 				"name": property_name,
@@ -98,12 +112,14 @@ func _property_set(key: String, value: Variant):
 	
 	ProjectSettings.set_setting(_get_setting_name(key), value)
 	
+	# NOTE @sphynx-owner: I am refraining from implementing a save blocker feature due to the fact
+	# that if any other settings are being set and need to be saved, all settings will be saved together.
 	if Engine.is_editor_hint():
 		ProjectSettings.save()
 
 
 func _get_setting_name(key: String) -> String:
-	return "%s/%s" % [settings_path, key]
+	return "%s/%s/%s" % [settings_path, settings_properties[key], key]
 
 
 func _on_project_settings_changed():
