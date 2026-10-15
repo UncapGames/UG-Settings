@@ -98,7 +98,8 @@ func _property_set(key: String, value: Variant):
 	
 	ProjectSettings.set_setting(_get_setting_name(key), value)
 	
-	ProjectSettings.save()
+	if Engine.is_editor_hint():
+		ProjectSettings.save()
 
 
 func _get_setting_name(key: String) -> String:
