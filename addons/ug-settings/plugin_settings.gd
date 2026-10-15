@@ -20,7 +20,7 @@ static var initialized_settings: Dictionary[GDScript, Dictionary]
 
 var settings_path: String = DEFAULT_SETTINGS_PATH
 
-var settings_properties: Array[StringName]
+var settings_properties: Array[String]
 
 var _setter_gate: bool = false
 
@@ -39,6 +39,8 @@ func _init() -> void:
 		
 		var constant_map: Dictionary = script.get_script_constant_map()
 		
+		print(constant_map)
+		
 		if constant_map.has(SETTINGS_PATH_OVERRIDE_SYMBOL):
 			initialized_settings[script].settings_path = constant_map[SETTINGS_PATH_OVERRIDE_SYMBOL]
 		
@@ -50,7 +52,7 @@ func _init() -> void:
 			
 			initialized_settings[script].settings_properties.append(property.name)
 			
-			var property_name: String = "%s/%s" % [settings_path, property.name]
+			var property_name: String = "%s/%s" % [initialized_settings[script].settings_path, property.name]
 			
 			var property_info: Dictionary = {
 				"name": property_name,
@@ -61,13 +63,16 @@ func _init() -> void:
 			
 			var default_value: Variant = script.get_property_default_value(property.name)
 			
+			print(property_name)
+			
 			if not ProjectSettings.has_setting(property_name):
+				print("setting setting: ", property_name, ", default value: ", default_value)
 				ProjectSettings.set_setting(property_name, default_value)
 			
 			# We call this every time, because in some scenarios not doing so resets hints
 			# after reloading the project
-			ProjectSettings.set_initial_value(property_name, default_value)
 			ProjectSettings.add_property_info(property_info)
+			ProjectSettings.set_initial_value(property_name, default_value)
 	
 	settings_path = initialized_settings[script].settings_path
 	
@@ -89,6 +94,8 @@ func _property_set(key: String, value: Variant):
 		return
 	
 	ProjectSettings.set_setting(_get_setting_name(key), value)
+	
+	ProjectSettings.save()
 
 
 func _get_setting_name(key: String) -> String:
