@@ -92,6 +92,7 @@ func _init() -> void:
 		
 		if not ProjectSettings.has_setting(setting_name):
 			push_error("missing project setting ", setting_name)
+			continue
 		
 		set(property, ProjectSettings.get_setting(setting_name))
 	
