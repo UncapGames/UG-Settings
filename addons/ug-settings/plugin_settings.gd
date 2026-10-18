@@ -5,6 +5,8 @@ extends RefCounted
 ## To use this, create a named class for your plugin's settings and call
 ## [member initialize_setting] for each setting during the class's [method _static_init] method.
 
+const PROPERTY_USER_SIGNAL_PREFIX: String = "setting_user_signal__"
+
 const DEFAULT_SETTINGS_PATH: String = "Plugins"
 
 const DEFAULT_SETTINGS_CATEGORY: String = "General"
@@ -107,7 +109,52 @@ func has_setting(key: String) -> bool:
 	return ProjectSettings.has_setting(_get_setting_name(key))
 
 
+func connect_setting_changed(name: String, callback: Callable) -> void:
+	if !settings_properties.has(name):
+		push_error("trying to connect to property ", name, " which does not exist")
+		return
+	
+	var user_signal_name: String = _get_user_signal_name(name)
+	
+	if !has_user_signal(user_signal_name):
+		add_user_signal(user_signal_name)
+	
+	connect(user_signal_name, callback)
+
+
+func disconnect_setting_changed(name: String, callback: Callable) -> void:
+	if !settings_properties.has(name):
+		push_error("trying to disconnect from property ", name, " which does not exist")
+		return
+	
+	var user_signal_name: String = _get_user_signal_name(name)
+	
+	if !has_user_signal(user_signal_name):
+		return
+	
+	disconnect(user_signal_name, callback)
+
+
+func is_connected_setting_changed(name: String, callback: Callable) -> bool:
+	if !settings_properties.has(name):
+		push_error("trying to get connected to property ", name, " which does not exist")
+		return false
+	
+	var user_signal_name: String = _get_user_signal_name(name)
+	
+	return has_user_signal(user_signal_name) and is_connected(user_signal_name, callback)
+
+
+func _get_user_signal_name(property: String) -> String:
+	return PROPERTY_USER_SIGNAL_PREFIX + property
+
+
 func _property_set(key: String, value: Variant):
+	var user_signal_name: String = _get_user_signal_name(key)
+	
+	if has_user_signal(user_signal_name):
+		emit_signal(user_signal_name)
+	
 	if _setter_gate:
 		return
 	
